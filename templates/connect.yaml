@@ -1,0 +1,56 @@
+{{- $KafkaOperator := lookup "apiextensions.k8s.io/v1" "CustomResourceDefinition" "" "kafkas.kafka.strimzi.io" -}}
+{{- if $KafkaOperator }}
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaConnect
+metadata:
+  annotations:
+    strimzi.io/use-connector-resources: 'true'
+  name: {{ .Values.global.connect.connect_name }}
+  namespace: {{ .Values.global.namespace }}
+spec:
+  image: {{ .Values.global.connect.base_image }}
+  logging:
+    type: inline
+    loggers:
+      connect.root.logger.level: {{ .Values.global.connect.logger.level }}
+  tls:
+    trustedCertificates:
+      - certificate: ca.crt
+        secretName: {{ .Values.global.kafka.kafka_cluster_name}}-cluster-ca-cert
+  authentication:
+    type: tls
+    certificateAndKey:
+      secretName: {{ .Values.global.connect.internal_user }}
+      certificate: user.crt
+      key: user.key
+  bootstrapServers: {{ .Values.global.kafkabootstrap }}
+  template:
+    pod:
+      imagePullSecrets:
+        - name: {{ .Values.global.connect.build.output.pushSecret }}
+  config:
+    auto.register.schemas: true
+    # kafka connect sees an error claiming: "org.apache.kafka.common.errors.UnsupportedVersionException: The node does not support GET_TELEMETRY_SUBSCRIPTIONS"
+    enable.metrics.push: false
+    config.providers: file
+    config.providers.file.class: org.apache.kafka.common.config.provider.FileConfigProvider
+    config.storage.topic: {{ .Values.global.namespace }}.{{ .Values.global.tenant_id }}.configs
+    offset.storage.topic: {{ .Values.global.namespace }}.{{ .Values.global.tenant_id }}.offsets
+    status.storage.topic: {{ .Values.global.namespace }}.{{ .Values.global.tenant_id }}.status
+    group.id: {{ .Values.global.namespace }}.{{ .Values.global.tenant_id }}.group.id
+  replicas: 1
+  version: 3.8.0
+  build:
+    output:
+      image: {{ .Values.global.connect.build.output.image }}
+      pushSecret: {{ .Values.global.connect.build.output.pushSecret }}
+      type: docker
+    plugins:
+      - artifacts:
+          {{- range .Values.global.connect.plugins.artifacts }}
+          - type: "{{ .type }}"
+            url: "{{ .url }}"
+          {{- end }}
+        name: my-kafka-tojdbc-connector1
+
+{{- end }}

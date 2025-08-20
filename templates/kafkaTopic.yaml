@@ -1,0 +1,8 @@
+{{- $KafkaOperator := lookup "apiextensions.k8s.io/v1" "CustomResourceDefinition" "" "kafkas.kafka.strimzi.io" -}}
+{{- if $KafkaOperator }}
+{{- range $topic := $.Values.global.kafkaTopics }}
+    {{- $ctx := merge $topic (dict "Values" $.Values "client_namespace" $.Release.Namespace "tenantid" $.Values.global.tenant_id) }}
+    {{- tpl (include "mychart.kafkaTopic" (dict "ctx" $ctx "Release" .Release "Values" .Values)) . }}
+{{- end }}
+
+{{- end }}

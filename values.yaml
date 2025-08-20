@@ -1,0 +1,46 @@
+global:
+  kafkaTopics:
+    - name: "test-topic"
+      kafka_cluster: "my-kafka-cluster"
+      kafka_namespace: kafka
+      type: external
+  kafkaUsers:
+    - name: test-user
+      kafka_cluster: my-kafka-cluster
+      authentication: tls
+      namespace: kafka
+      user_type: connect
+  # defaults to kafka namespace, global values section should override.
+  namespace: kafka
+  kafka_ns: kafka
+  connect:
+    # connect name
+    connect_name: kafka-connect
+    # connect base image
+    base_image: <some_acr>.azurecr.io/kafka-connect-custom:1.1.1
+    config:
+      # connect config groupid
+      groupid: connect-fixed-namespace
+    logger:
+      # connect logger level
+      level: DEBUG
+    build:
+      output:
+        # connect build output pushSecret
+        pushSecret: <some_pull_secret>
+        # connect build output image
+        image: <some_acr>.azurecr.io/<some_product>-kafka-connect-repo/<some_product>-connect-kafka:test-mark
+    plugins:
+      # connect plugins artifacts list
+      artifacts: 
+        - type: jar
+          url: >-
+            https://packages.confluent.io/maven/io/confluent/kafka-connect-elasticsearch/10.0.1/kafka-connect-elasticsearch-10.0.1.jar
+  kafka:
+    # connect kafka cluster name
+    kafka_cluster_name: my-kafka-cluster
+    # connect kafka user
+    kafkaUser: default-user
+    # connect kafka internal bootstrap servers
+
+    internalbootstrapServers: my-kafka-cluster-kafka-bootstrap.kafka.svc.cluster.local:9093

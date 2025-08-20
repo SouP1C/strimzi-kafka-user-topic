@@ -1,0 +1,77 @@
+{{- $KafkaOperator := lookup "apiextensions.k8s.io/v1" "CustomResourceDefinition" "" "kafkas.kafka.strimzi.io" -}}
+{{- if $KafkaOperator }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: copy-kafka-user-secrets
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "10"
+spec:
+  template:
+    spec:
+      restartPolicy: Never
+      serviceAccountName: copy-secrets-sa
+      containers:
+        - name: copy-secrets
+          image: bitnami/kubectl:latest
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+              {{- range .Values.global.kafkaUsers }}
+              SECRET_NAME="{{ .name }}"
+              SRC_NS="{{ .namespace }}"
+              DEST_NS="{{ $.Release.Namespace }}"
+
+              echo "Waiting for secret $SECRET_NAME in namespace $SRC_NS..."
+              TIMEOUT=300
+              INTERVAL=5
+              ELAPSED=0
+              while ! kubectl get secret "$SECRET_NAME" -n "$SRC_NS" >/dev/null 2>&1; do
+                if [ $ELAPSED -ge $TIMEOUT ]; then
+                  echo "Timeout waiting for secret $SECRET_NAME in namespace $SRC_NS"
+                  exit 1
+                fi
+                echo "Secret $SECRET_NAME not found yet. Retrying in $INTERVAL seconds..."
+                sleep $INTERVAL
+                ELAPSED=$((ELAPSED + INTERVAL))
+              done
+
+              echo "Secret $SECRET_NAME found. Extracting and recreating in $DEST_NS..."
+
+              CA_CRT=$(kubectl get secret "$SECRET_NAME" -n "$SRC_NS" -o jsonpath='{.data.ca\.crt}')
+              USER_CRT=$(kubectl get secret "$SECRET_NAME" -n "$SRC_NS" -o jsonpath='{.data.user\.crt}')
+              USER_KEY=$(kubectl get secret "$SECRET_NAME" -n "$SRC_NS" -o jsonpath='{.data.user\.key}')
+              USER_P12=$(kubectl get secret "$SECRET_NAME" -n "$SRC_NS" -o jsonpath='{.data.user\.p12}')
+              USER_PASSWORD=$(kubectl get secret "$SECRET_NAME" -n "$SRC_NS" -o jsonpath='{.data.user\.password}')
+
+              # Decode to files:
+              echo "$CA_CRT" | base64 -d > /tmp/ca.crt
+              echo "$USER_CRT" | base64 -d > /tmp/user.crt
+              echo "$USER_KEY" | base64 -d > /tmp/user.key
+              echo "$USER_P12" | base64 -d > /tmp/user.p12
+              echo "$USER_PASSWORD" | base64 -d > /tmp/user.password
+
+              kubectl create secret generic "$SECRET_NAME" \
+                --from-file=/tmp/ca.crt \
+                --from-file=/tmp/user.crt \
+                --from-file=/tmp/user.key \
+                --from-file=/tmp/user.p12 \
+                --from-file=/tmp/user.password \
+                -n "$DEST_NS" \
+                --dry-run=client -o yaml | \
+              kubectl label --local -f - \
+                "app.kubernetes.io/managed-by=Helm" \
+                "app.kubernetes.io/instance={{ $.Release.Name }}" \
+                "app.kubernetes.io/name={{ $.Chart.Name }}" \
+                -o yaml | \
+              kubectl annotate --local -f - \
+                "meta.helm.sh/release-name={{ $.Release.Name }}" \
+                "meta.helm.sh/release-namespace={{ $.Release.Namespace }}" \
+                -o yaml | \
+              kubectl apply -f -
+              {{- end }}
+
+{{- end }}
